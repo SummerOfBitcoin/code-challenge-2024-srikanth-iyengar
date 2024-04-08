@@ -8,12 +8,14 @@ use crate::{
         },
         Opcode,
     },
-    stack::Stack,
+    stack::{self, Stack},
+    transaction::Transaction,
 };
 
+use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 // use libsecp256k1::{verify, Message, PublicKey, Signature};
 use ripemd::{Digest as Ripemd160Digest, Ripemd160};
-use sha2::Sha256;
+use sha2::{Sha256};
 
 use super::opcodes::all_opcodes::OP_EQUALVERIFY;
 
@@ -23,22 +25,26 @@ use super::opcodes::all_opcodes::OP_EQUALVERIFY;
 /// 3. P2WKH
 /// 4. P2WSH
 /// 5. P2TR
-pub struct Assembler<'a> {
+pub struct Interpreter<'a> {
     pub instructions: &'a [u8],
     pub stack: Stack<Vec<u8>>,
     exec_ctx: &'a u8,
     instructions_executed: usize,
     is_halted: bool,
+    vin_idx: u32,
+    tx: &'a Transaction,
 }
 
-impl<'a> Assembler<'a> {
-    pub fn new(instructions: &'a [u8]) -> Self {
-        Assembler {
+impl<'a> Interpreter<'a> {
+    pub fn new(instructions: &'a [u8], vin_idx: u32, tx: &'a Transaction) -> Self {
+        Interpreter {
             instructions,
             stack: Stack::new(),
             exec_ctx: &instructions[0],
             instructions_executed: 0,
             is_halted: false,
+            vin_idx,
+            tx,
         }
     }
 
@@ -52,9 +58,11 @@ impl<'a> Assembler<'a> {
             max_range: None,
         };
 
+        println!("Opcode {:?}", opcode);
+
         if OP_HASH160 == opcode {
             // Take the top element of the stack hash it using sha256 then use ripemd160 ->
-            // push to the 20 byte output into the stack
+            // push the 20 byte output into the stack
             let top = self.stack.pop();
             match top {
                 Some(val) => {
@@ -118,7 +126,6 @@ impl<'a> Assembler<'a> {
             // Stop the program and stack top is the result
             self.is_halted = true;
             return;
-        } else if OP_CHECKSIG == opcode {
         } else if OP_PUSHBYTES == opcode {
             let len = opcode.code - OP_PUSHBYTES.code + 1;
             let mut data: Vec<u8> = Vec::new();
@@ -151,6 +158,35 @@ impl<'a> Assembler<'a> {
                 data.push(self.get_ctx_val());
             }
             self.stack.push(data);
+        } else if OP_CHECKSIG == opcode {
+            if let (Some(pubkey), Some(signature)) = (self.stack.pop(), self.stack.pop()) {
+                let mut serialized_tx = self.tx.get_raw_tx_for_vin(self.vin_idx);
+                let sighash_type = *signature.last().unwrap() as u32;
+                sighash_type.to_le_bytes().iter().for_each(|val| serialized_tx.push(*val));
+
+                let mut hasher = Sha256::new();
+                hasher.update(serialized_tx);
+                let result = hasher.finalize();
+
+                let mut hasher = Sha256::new();
+                hasher.update(result);
+                let serialized_hash = hasher.finalize();
+
+                if let (Ok(msg), Ok(sig), Ok(pk)) = (
+                    Message::parse_slice(serialized_hash.as_slice()),
+                    Signature::parse_der_lax(signature.as_slice()),
+                    PublicKey::parse_slice(pubkey.as_slice(), Some(PublicKeyFormat::Compressed)),
+                ) {
+                    let is_valid = verify(&msg, &sig, &pk);
+                    println!("{}", is_valid);
+                } else {
+                    self.is_halted = true;
+                    self.stack.push(vec![0]);
+                }
+            } else {
+                self.is_halted = true;
+                self.stack.push(vec![0]);
+            }
         } else if OP_CHECKMULTISIG == opcode {
         } else {
             // should we crash :) ?
@@ -179,24 +215,3 @@ impl<'a> Assembler<'a> {
         val
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::opcodes::all_opcodes::OP_PUSHDATA1;
-
-    use super::Assembler;
-
-    #[test]
-    pub fn test() {
-        let instructions = [OP_PUSHDATA1.code, 0x02, 0x03, 0x04];
-        let mut assembler: Assembler = Assembler::new(&instructions);
-        assembler.exec_all();
-        // println!("top: {:?}", assembler.stack.pop());
-        // println!("top: {:?}", assembler.stack.pop());
-        // println!("top: {:?}", assembler.stack.pop());
-        // println!("top: {:?}", assembler.stack.pop());
-        // println!("top: {:?}", assembler.stack.pop());
-        // println!("top: {:?}", assembler.stack.pop());
-    }
-}
-
