@@ -8,14 +8,14 @@ use crate::{
         },
         Opcode,
     },
-    stack::{self, Stack},
+    stack::Stack,
     transaction::Transaction,
 };
 
 use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 // use libsecp256k1::{verify, Message, PublicKey, Signature};
 use ripemd::{Digest as Ripemd160Digest, Ripemd160};
-use sha2::{Sha256};
+use sha2::Sha256;
 
 use super::opcodes::all_opcodes::OP_EQUALVERIFY;
 
@@ -58,7 +58,7 @@ impl<'a> Interpreter<'a> {
             max_range: None,
         };
 
-        println!("Opcode {:?}", opcode);
+        // println!("opcode {:?}", opcode);
 
         if OP_HASH160 == opcode {
             // Take the top element of the stack hash it using sha256 then use ripemd160 ->
@@ -162,7 +162,10 @@ impl<'a> Interpreter<'a> {
             if let (Some(pubkey), Some(signature)) = (self.stack.pop(), self.stack.pop()) {
                 let mut serialized_tx = self.tx.get_raw_tx_for_vin(self.vin_idx);
                 let sighash_type = *signature.last().unwrap() as u32;
-                sighash_type.to_le_bytes().iter().for_each(|val| serialized_tx.push(*val));
+                sighash_type
+                    .to_le_bytes()
+                    .iter()
+                    .for_each(|val| serialized_tx.push(*val));
 
                 let mut hasher = Sha256::new();
                 hasher.update(serialized_tx);
@@ -178,7 +181,11 @@ impl<'a> Interpreter<'a> {
                     PublicKey::parse_slice(pubkey.as_slice(), Some(PublicKeyFormat::Compressed)),
                 ) {
                     let is_valid = verify(&msg, &sig, &pk);
-                    println!("{}", is_valid);
+                    if is_valid {
+                        self.stack.push(vec![0x01]);
+                    } else {
+                        self.stack.push(vec![0x00]);
+                    }
                 } else {
                     self.is_halted = true;
                     self.stack.push(vec![0]);

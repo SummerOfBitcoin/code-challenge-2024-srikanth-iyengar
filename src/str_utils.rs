@@ -32,3 +32,22 @@ pub fn get_compact_size_bytes(data: &u64) -> Vec<u8> {
 pub fn get_hex_bytes(num: &str) -> Result<Vec<u8>, ParseIntError> {
     (0..num.len()).step_by(2).map(|i| u8::from_str_radix(&num[i..i+2], 16)).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::get_compact_size_bytes;
+
+
+
+    #[test]
+    pub fn test_compact_size_bytes() {
+        let x = 0x1A4;
+
+        let x : String= get_compact_size_bytes(&x).iter().map(|val| format!("{:02x}", *val)).collect();
+
+        let y = 0x45;
+        let y: String = get_compact_size_bytes(&y).iter().map(|val| format!("{:02x}", *val)).collect();
+
+        println!("value {:?}/{:?}", x, y);
+    }
+}

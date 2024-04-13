@@ -1,8 +1,20 @@
+use std::str::FromStr;
+
 use serde::Deserialize;
 use serde_json;
 
-use crate::{interpreter::{self, Interpreter}, str_utils::{get_compact_size_bytes, get_hex_bytes}};
+use crate::{
+    hash_utils::double_hash256,
+    interpreter::Interpreter,
+    opcodes::all_opcodes::{OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHBYTES},
+    str_utils::{get_compact_size_bytes, get_hex_bytes},
+};
 
+#[path ="./test/transaction_tests.rs"]
+#[cfg(test)]
+mod transaction_test;
+
+#[derive(Debug)]
 pub enum PubkeyType {
     P2PKH,    // Pay to pubkey hash
     P2WPKH,   // SegWit transaction unlock script type, witness field is present
@@ -10,6 +22,21 @@ pub enum PubkeyType {
     P2TR,     // Pay to taproot locks bitcoin
     P2SH,     // Pay to hash
     OPRETURN, // This is itself a opcode as well as a script itself, used to prevent burn money ?
+}
+
+impl FromStr for PubkeyType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "p2pkh" => Ok(PubkeyType::P2PKH),
+            "p2sh" => Ok(PubkeyType::P2SH),
+            "v0_p2wpkh" => Ok(PubkeyType::P2WPKH),
+            "v0_p2wsh" => Ok(PubkeyType::P2WSH),
+            "v1_p2tr" => Ok(PubkeyType::P2TR),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -31,6 +58,7 @@ pub struct Vin {
     pub witness: Option<Vec<String>>,
     pub is_coinbase: bool,
     pub sequence: u32,
+    pub inner_redeemscript_asm: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +70,7 @@ pub struct Transaction {
     pub locktime: u32,
     pub vin: Vec<Vin>,
     pub vout: Vec<Pubkey>,
+    pub is_segwit: Option<bool>,
 }
 
 impl Transaction {
@@ -118,7 +147,7 @@ impl Transaction {
         raw_bytes
     }
 
-    pub fn get_raw_tx_for_vin(&self, idx: u32) -> Vec<u8> {
+    pub fn get_raw_tx_for_legacy_tx(&self, idx: u32) -> Vec<u8> {
         let mut raw_bytes: Vec<u8> = Vec::new();
 
         // push version bytes
@@ -134,24 +163,30 @@ impl Transaction {
             // push txid bytes
             let txid_bytes = get_hex_bytes(&vin.txid);
             if let Ok(vin) = txid_bytes {
-                vin.iter().for_each(|val| raw_bytes.push(*val));
+                vin.iter().rev().for_each(|val| raw_bytes.push(*val));
             }
 
             // vout bytes in little endian format
             let vout_bytes: Vec<u8> = vin.vout.to_le_bytes().to_vec();
             vout_bytes.iter().for_each(|val| raw_bytes.push(*val));
 
-            // get length of scriptsig size in compact_size foramt
-            let scriptsig_len_bytes: Vec<u8> =
-                get_compact_size_bytes(&((vin.scriptsig.len() / 2) as u64));
-            scriptsig_len_bytes
-                .iter()
-                .for_each(|val| raw_bytes.push(*val));
-
+            // include the vin which we are verifying, else script will be empty
             if idx == i as u32 {
-                // lets push the actual signature now
-                let scriptsig_bytes: Vec<u8> = get_hex_bytes(&vin.scriptsig).unwrap();
+                // get length of scriptsig size in compact_size foramt
+                let scriptsig_len_bytes: Vec<u8> =
+                    get_compact_size_bytes(&((vin.prevout.scriptpubkey.len() / 2) as u64));
+                scriptsig_len_bytes
+                    .iter()
+                    .for_each(|val| raw_bytes.push(*val));
+                // lets push the actual script sig now
+                let scriptsig_bytes: Vec<u8> = get_hex_bytes(&vin.prevout.scriptpubkey).unwrap();
                 scriptsig_bytes.iter().for_each(|val| raw_bytes.push(*val));
+            } else {
+                let x = 0x00;
+                let scriptsig_len_bytes: Vec<u8> = get_compact_size_bytes(&(x as u64));
+                scriptsig_len_bytes
+                    .iter()
+                    .for_each(|val| raw_bytes.push(*val));
             }
 
             // push the sequence bytes in little endian format
@@ -180,23 +215,226 @@ impl Transaction {
             scripitsig_bytes.iter().for_each(|val| raw_bytes.push(*val));
         });
 
-        return raw_bytes;
+        self.locktime
+            .to_le_bytes()
+            .iter()
+            .for_each(|val| raw_bytes.push(*val));
+
+        raw_bytes
     }
 
-    pub fn validate_transacation(&self) {
-        for (idx, vin) in self.vin.iter().enumerate() {
-            if vin.prevout.scriptpubkey_type != "p2pkh" {
-                continue
-            }
-            let scriptpubkey_bytes = get_hex_bytes(vin.prevout.scriptpubkey.as_str());
-            if let Ok(scriptpubkey_bytes) = scriptpubkey_bytes {
-                let mut instructions = get_hex_bytes(vin.scriptsig.as_str()).unwrap();
-                scriptpubkey_bytes.iter().for_each(|val| instructions.push(*val));
-                let mut interpreter: Interpreter = Interpreter::new(instructions.as_slice(), idx as u32, self);
-                let result = interpreter.exec_all();
+    pub fn serialize_witness_transaction(&self, idx: u32) -> Vec<u8> {
+        let version_bytes: Vec<u8> = self.version.to_le_bytes().to_vec();
 
-                println!("Result {:?}", result);
+        let mut txid_vout_bytes: Vec<u8> = Vec::new();
+        let mut sequence_bytes: Vec<u8> = Vec::new();
+
+        for vin in self.vin.iter() {
+            // prepare txid+vout for all tx
+            let txid_bytes = get_hex_bytes(&vin.txid);
+            if let Ok(val) = txid_bytes {
+                val.iter().rev().for_each(|x| txid_vout_bytes.push(*x));
             }
+            let vout_bytes = vin.vout.to_le_bytes().to_vec();
+            vout_bytes.iter().for_each(|x| txid_vout_bytes.push(*x));
+
+            // prepare sequence byte array
+            vin.sequence
+                .to_le_bytes()
+                .iter()
+                .for_each(|val| sequence_bytes.push(*val));
+        }
+
+        let txid_vout_hash = double_hash256(&txid_vout_bytes);
+        let sequence_hash = double_hash256(&sequence_bytes);
+
+        let vin = self.vin.get(idx as usize);
+
+        let (cur_txid_vout_bytes, scriptcode_bytes, amount_bytes, sequence_bytes) =
+            if let Some(val) = vin {
+                let mut cur_txid_vout_bytes: Vec<u8> = Vec::new();
+                let mut scriptcode_bytes: Vec<u8> = vec![
+                    OP_DUP.code,
+                    OP_HASH160.code,
+                    OP_PUSHBYTES.code + 0x014 - 0x01,
+                ];
+                if let Ok(txid_bytes) = get_hex_bytes(&val.txid) {
+                    txid_bytes
+                        .iter()
+                        .rev()
+                        .for_each(|x| cur_txid_vout_bytes.push(*x));
+                }
+
+                val.vout
+                    .to_le_bytes()
+                    .to_vec()
+                    .iter()
+                    .for_each(|x| cur_txid_vout_bytes.push(*x));
+
+                // crerate the scriptcode
+                if let Ok(pubkeyhash) = get_hex_bytes(val.prevout.scriptpubkey.as_str()) {
+                    pubkeyhash[2..]
+                        .iter()
+                        .for_each(|val| scriptcode_bytes.push(*val));
+
+                    scriptcode_bytes.push(OP_EQUALVERIFY.code);
+                    scriptcode_bytes.push(OP_CHECKSIG.code)
+                }
+
+                // amount
+                let amount_bytes = val.prevout.value.to_le_bytes();
+
+                // sequence
+                let sequence_bytes = val.sequence.to_le_bytes();
+
+                (
+                    cur_txid_vout_bytes,
+                    scriptcode_bytes,
+                    amount_bytes,
+                    sequence_bytes,
+                )
+            } else {
+                // can we do better coz this is deadcode
+                let zero_u32: u32 = 0x00;
+                let zero_u64: u64 = 0x00;
+                (
+                    vec![],
+                    vec![],
+                    zero_u64.to_le_bytes(),
+                    zero_u32.to_le_bytes(),
+                )
+            };
+
+        let mut vout_bytes: Vec<u8> = Vec::new();
+
+        self.vout.iter().for_each(|vout| {
+            // push amout in little endian format
+            let amount_bytes: Vec<u8> = vout.value.to_le_bytes().to_vec();
+            amount_bytes.iter().for_each(|val| vout_bytes.push(*val));
+
+            // push scriptsig size in compact size format
+            let scriptsigsize_len_bytes: Vec<u8> =
+                get_compact_size_bytes(&((vout.scriptpubkey.len() / 2) as u64));
+            scriptsigsize_len_bytes
+                .iter()
+                .for_each(|val| vout_bytes.push(*val));
+
+            // push the actual scriptsig
+            let scripitsig_bytes: Vec<u8> = get_hex_bytes(&vout.scriptpubkey).unwrap();
+            scripitsig_bytes
+                .iter()
+                .for_each(|val| vout_bytes.push(*val));
+        });
+
+        let vout_hash = double_hash256(&vout_bytes);
+
+        let locktime_bytes = self.locktime.to_le_bytes();
+
+        let mut raw_bytes: Vec<u8> = Vec::new();
+
+        // let debug: String = scriptcode_bytes.iter().map(|x| format!("{:02x}", x)).collect();
+        // println!("{} {}", debug, debug.len());
+
+        // preimage = version + hash256(inputs) + hash256(sequences) + input +
+        // scriptcode + amount + sequence + hash256(outputs) + locktime
+        version_bytes.iter().for_each(|x| raw_bytes.push(*x));
+        txid_vout_hash.iter().for_each(|x| raw_bytes.push(*x));
+        sequence_hash.iter().for_each(|x| raw_bytes.push(*x));
+        cur_txid_vout_bytes.iter().for_each(|x| raw_bytes.push(*x));
+        get_compact_size_bytes(&(scriptcode_bytes.len() as u64)).iter().for_each(|x| raw_bytes.push(*x));
+        scriptcode_bytes.iter().for_each(|x| raw_bytes.push(*x));
+        amount_bytes.iter().for_each(|x| raw_bytes.push(*x));
+        sequence_bytes.iter().for_each(|x| raw_bytes.push(*x));
+        vout_hash.iter().for_each(|x| raw_bytes.push(*x));
+        locktime_bytes.iter().for_each(|x| raw_bytes.push(*x));
+
+        raw_bytes
+    }
+
+    pub fn get_raw_tx_for_vin(&self, idx: u32) -> Vec<u8> {
+        let parsed_type = self
+            .vin
+            .get(idx as usize)
+            .unwrap()
+            .prevout
+            .scriptpubkey_type
+            .parse::<PubkeyType>();
+        match parsed_type.unwrap() {
+            PubkeyType::P2WSH | PubkeyType::P2WPKH => {
+                return self.serialize_witness_transaction(idx);
+            }
+            _ => self.get_raw_tx_for_legacy_tx(idx),
         }
     }
+
+    pub fn validate_transacation(&self) -> bool {
+        let mut success = true;
+        for (idx, vin) in self.vin.iter().enumerate() {
+            if let Ok(parsed_enum) = vin.prevout.scriptpubkey_type.parse::<PubkeyType>() {
+                match parsed_enum {
+                    PubkeyType::P2PKH => {
+                        // prepare the instruction
+                        let mut instructions: Vec<u8> = Vec::new();
+                        if let Ok(scripitsig_bytes) = get_hex_bytes(vin.scriptsig.as_ref()) {
+                            scripitsig_bytes
+                                .iter()
+                                .for_each(|val| instructions.push(*val));
+                        }
+
+                        // push the scriptpubkey
+                        if let Ok(scriptpubkey_bytes) = get_hex_bytes(&vin.prevout.scriptpubkey) {
+                            scriptpubkey_bytes
+                                .iter()
+                                .for_each(|val| instructions.push(*val));
+                        }
+
+                        let mut interpreter = Interpreter::new(&instructions, idx as u32, self);
+                        if let Some(result) = interpreter.exec_all() {
+                            success &= result.len() == 1 && result[0] == 0x01;
+                        }
+                    }
+                    PubkeyType::P2WPKH => {
+                        // prepare the instruction
+                        let pubkeyhash =
+                            if let Ok(scriptpubkey) = get_hex_bytes(&vin.prevout.scriptpubkey) {
+                                scriptpubkey[2..].to_vec()
+                            } else {
+                                vec![]
+                            };
+
+                        // basic sanity check if the pubkeyhash is of 20 bytes
+                        assert_eq!(pubkeyhash.len(), 20);
+
+                        let mut instruction = vec![
+                            OP_DUP.code,
+                            OP_HASH160.code,
+                            OP_PUSHBYTES.code + 0x014 - 0x01,
+                        ];
+
+                        pubkeyhash.iter().for_each(|val| instruction.push(*val));
+
+                        instruction.push(OP_EQUALVERIFY.code);
+                        instruction.push(OP_CHECKSIG.code);
+
+                        let mut interpreter = Interpreter::new(&instruction, idx as u32, self);
+
+                        vin.witness.as_ref().unwrap().iter().for_each(|val| {
+                            if let Ok(bytes) = get_hex_bytes(val) {
+                                interpreter.stack.push(bytes);
+                            }
+                        });
+
+                        if let Some(result) = interpreter.exec_all() {
+                            success &= result.len() == 1 && result[0] == 0x01;
+                        }
+                    }
+                    _ => {
+                        success = false;
+                    }
+                }
+            }
+        }
+        success
+    }
 }
+
