@@ -1,16 +1,17 @@
-use std::str::FromStr;
+use std::{os::linux::raw, str::FromStr};
 
 use serde::Deserialize;
 use serde_json;
 
 use crate::{
+    debug,
     hash_utils::double_hash256,
     interpreter::Interpreter,
     opcodes::all_opcodes::{OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHBYTES},
     str_utils::{get_compact_size_bytes, get_hex_bytes},
 };
 
-#[path ="./test/transaction_tests.rs"]
+#[path = "./test/transaction_tests.rs"]
 #[cfg(test)]
 mod transaction_test;
 
@@ -64,6 +65,7 @@ pub struct Vin {
 #[derive(Deserialize)]
 pub struct Transaction {
     pub txid: Option<String>,
+    pub wtxid: Option<String>,
     // this is the sha256 hash of the txid (reverse order, again just a bitcoin thing)
     pub sanity_hash: Option<String>,
     pub version: u32,
@@ -81,12 +83,17 @@ impl Transaction {
     }
 
     // Raw transaction in bytes which can be considered for computing txid
-    pub fn get_raw_bytes(&self) -> Vec<u8> {
+    pub fn get_raw_bytes(&self, include_witness: bool) -> Vec<u8> {
         let mut raw_bytes: Vec<u8> = Vec::new();
 
         // First we push the version bytes
         let version_bytes: Vec<u8> = self.version.to_le_bytes().to_vec();
         version_bytes.iter().for_each(|val| raw_bytes.push(*val));
+
+        if include_witness {
+            raw_bytes.push(0x00);
+            raw_bytes.push(0x01);
+        }
 
         // The number of input bytes
         let vin_len_bytes = get_compact_size_bytes(&(self.vin.len() as u64));
@@ -138,6 +145,30 @@ impl Transaction {
             let scripitsig_bytes: Vec<u8> = get_hex_bytes(&vout.scriptpubkey).unwrap();
             scripitsig_bytes.iter().for_each(|val| raw_bytes.push(*val));
         });
+
+        if include_witness {
+            // push number of txs
+
+            for vin in self.vin.iter() {
+                // iterate over all the witness field if any
+                if let Some(witness) = &vin.witness {
+                    get_compact_size_bytes(&(witness.len() as u64))
+                        .iter()
+                        .for_each(|x| raw_bytes.push(*x));
+                    witness.iter().for_each(|val| {
+                        get_compact_size_bytes(&((val.len() / 2) as u64))
+                            .iter()
+                            .for_each(|x| raw_bytes.push(*x)); //  I know that this wil be a even number
+                        get_hex_bytes(val)
+                            .unwrap()
+                            .iter()
+                            .for_each(|x| raw_bytes.push(*x));
+                    });
+                } else {
+                    raw_bytes.push(0x00);
+                }
+            }
+        }
 
         self.locktime
             .to_le_bytes()
@@ -341,7 +372,9 @@ impl Transaction {
         txid_vout_hash.iter().for_each(|x| raw_bytes.push(*x));
         sequence_hash.iter().for_each(|x| raw_bytes.push(*x));
         cur_txid_vout_bytes.iter().for_each(|x| raw_bytes.push(*x));
-        get_compact_size_bytes(&(scriptcode_bytes.len() as u64)).iter().for_each(|x| raw_bytes.push(*x));
+        get_compact_size_bytes(&(scriptcode_bytes.len() as u64))
+            .iter()
+            .for_each(|x| raw_bytes.push(*x));
         scriptcode_bytes.iter().for_each(|x| raw_bytes.push(*x));
         amount_bytes.iter().for_each(|x| raw_bytes.push(*x));
         sequence_bytes.iter().for_each(|x| raw_bytes.push(*x));
@@ -369,6 +402,7 @@ impl Transaction {
 
     pub fn validate_transacation(&self) -> bool {
         let mut success = true;
+
         for (idx, vin) in self.vin.iter().enumerate() {
             if let Ok(parsed_enum) = vin.prevout.scriptpubkey_type.parse::<PubkeyType>() {
                 match parsed_enum {
@@ -434,7 +468,7 @@ impl Transaction {
                 }
             }
         }
+
         success
     }
 }
-

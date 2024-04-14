@@ -6,7 +6,7 @@ use crate::{hash_utils::double_hash256, stack::Stack, str_utils::get_hex_bytes, 
 #[cfg(test)]
 mod merkle_test;
 
-fn merkleroot(txs: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+pub fn merkleroot(txs: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     if txs.len() == 1 {
         return txs;
     }
@@ -33,11 +33,16 @@ fn merkleroot(txs: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     merkleroot(result)
 }
 
-pub fn prepare_merkle_root(txs: &Vec<&Transaction>) -> Vec<u8> {
+pub fn prepare_merkle_root(txs: &Vec<&Transaction>, is_wtxid: bool) -> Vec<u8> {
     let txids: Vec<Vec<u8>> = txs
         .iter()
         .map(|tx| {
-            let mut result = get_hex_bytes(tx.txid.as_ref().unwrap()).unwrap().clone();
+            let input = if is_wtxid {
+                tx.wtxid.as_ref()
+            } else {
+                tx.txid.as_ref()
+            };
+            let mut result = get_hex_bytes(input.unwrap()).unwrap().clone();
             result.reverse();
             result
         })
