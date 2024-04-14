@@ -2,12 +2,16 @@ use sha2::{Digest, Sha256};
 use std::{collections::HashSet, fs};
 use transaction::Transaction;
 
+use crate::merkle::{prepare_merkle_root, reorder_txs};
+
 mod hash_utils;
 mod interpreter;
+mod merkle;
 mod opcodes;
 mod stack;
 mod str_utils;
 mod transaction;
+mod macro_utils;
 
 fn get_txs() -> Vec<Transaction> {
     // let directory = "serialize_test/";
@@ -30,10 +34,14 @@ fn get_txs() -> Vec<Transaction> {
 
                 val.sanity_hash = Some(String::from(&json_path[start_index..end_index]));
 
-
                 // check if the current transaction is segwit
-                let pubkey_types: HashSet<String> = val.vin.iter().map(|vin| vin.prevout.scriptpubkey_type.clone()).collect();
-                val.is_segwit = Some(pubkey_types.contains("v0_p2wpkh") || pubkey_types.contains("v0_p2wsh"));
+                let pubkey_types: HashSet<String> = val
+                    .vin
+                    .iter()
+                    .map(|vin| vin.prevout.scriptpubkey_type.clone())
+                    .collect();
+                val.is_segwit =
+                    Some(pubkey_types.contains("v0_p2wpkh") || pubkey_types.contains("v0_p2wsh"));
 
                 txs.push(val);
             }
@@ -52,7 +60,6 @@ fn remove_double_spending_tx<'a>(txs: &'a mut Vec<Transaction>) -> Vec<&'a Trans
         .iter()
         .map(|tx| {
             let mut should_accept: bool = true;
-
 
             tx.vin.iter().for_each(|vin| {
                 let vout_str = vin.vout.to_string();
@@ -121,14 +128,25 @@ fn main() {
 
     println!("Number of txs after removing double spending {}", txs.len());
 
-    let mut verified_tx: Vec<&Transaction> = Vec::new();
+    let mut verified_txs: Vec<&Transaction> = Vec::new();
     // verify each trannscations vin
     for tx in txs.iter() {
         if tx.validate_transacation() {
-            verified_tx.push(&tx);
+            verified_txs.push(&tx);
         }
     }
-    println!("Verified {}", verified_tx.len());
+    println!("Verified {}", verified_txs.len());
 
     // now we have the verified transactions
+
+    // order the transactions topologically
+    let ordered_txs: Vec<&Transaction> = reorder_txs(&verified_txs);
+    println!("Number of transactions after reordering: {}", ordered_txs.len());
+
+    // prepare the merkle root
+    let merkle_root = prepare_merkle_root(&ordered_txs);
+    let merkle_root_str : String= merkle_root.iter().map(|x| format!("{:02x}", x)).collect();
+
+    debug!(merkle_root, merkle_root_str);
 }
+

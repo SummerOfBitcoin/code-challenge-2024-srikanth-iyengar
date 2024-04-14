@@ -13,7 +13,6 @@ use crate::{
 };
 
 use libsecp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
-// use libsecp256k1::{verify, Message, PublicKey, Signature};
 use ripemd::{Digest as Ripemd160Digest, Ripemd160};
 use sha2::Sha256;
 
@@ -58,8 +57,7 @@ impl<'a> Interpreter<'a> {
             max_range: None,
         };
 
-        // println!("opcode {:?}", opcode);
-
+        // TODO: use Match
         if OP_HASH160 == opcode {
             // Take the top element of the stack hash it using sha256 then use ripemd160 ->
             // push the 20 byte output into the stack

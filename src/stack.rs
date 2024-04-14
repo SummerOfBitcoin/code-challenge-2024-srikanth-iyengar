@@ -19,7 +19,7 @@ impl<T> Stack<T> {
         Stack { top: None }
     }
 
-    pub fn is_empty(self) -> bool {
+    pub fn is_empty(&self) -> bool {
         match self.top {
             Some(_) => false,
             None => true,
