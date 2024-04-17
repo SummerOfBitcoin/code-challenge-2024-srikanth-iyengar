@@ -213,6 +213,7 @@ dependencies = [
  "hex-literal",
  "libsecp256k1",
  "num-bigint",
+ "rand",
  "ripemd",
  "serde",
  "serde_json",

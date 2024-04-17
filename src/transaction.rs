@@ -1,10 +1,9 @@
-use std::{os::linux::raw, str::FromStr};
+use std::str::FromStr;
 
 use serde::Deserialize;
 use serde_json;
 
 use crate::{
-    debug,
     hash_utils::double_hash256,
     interpreter::Interpreter,
     opcodes::all_opcodes::{OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHBYTES},
@@ -73,12 +72,16 @@ pub struct Transaction {
     pub vin: Vec<Vin>,
     pub vout: Vec<Pubkey>,
     pub is_segwit: Option<bool>,
+    pub weight: Option<usize>,
+    pub tx_fee: Option<u64>,
 }
 
 impl Transaction {
     // Constructor for Transaction from raw json string
     pub fn new(raw_json_tx: &str) -> Result<Transaction, serde_json::Error> {
-        let tx: Transaction = serde_json::from_str(raw_json_tx)?;
+        let mut tx: Transaction = serde_json::from_str(raw_json_tx)?;
+        tx.assign_weight();
+        tx.assign_tx_fee();
         Ok(tx)
     }
 
@@ -470,5 +473,22 @@ impl Transaction {
         }
 
         success
+    }
+
+    pub fn assign_weight(&mut self) {
+        // these are the fields that will directly go with x4 multiplier
+        let raw_tx = self.get_raw_bytes(false);
+        let raw_tx_with_witness = self.get_raw_bytes(true);
+
+        let weight = 3 * raw_tx.len() +  raw_tx_with_witness.len();
+
+        self.weight = Some(weight);
+    }
+
+    pub fn assign_tx_fee(&mut self) {
+        let vin_amount: u64 = self.vin.iter().map(|vin| vin.prevout.value).sum();
+        let vout_amount: u64 = self.vout.iter().map(|vout| vout.value).sum();
+
+        self.tx_fee = Some(vin_amount - vout_amount);
     }
 }
