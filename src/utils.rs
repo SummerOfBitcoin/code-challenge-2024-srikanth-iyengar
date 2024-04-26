@@ -68,10 +68,10 @@ pub fn remove_double_spending_tx<'a>(txs: &'a mut Vec<Transaction>) -> Vec<&'a T
                 used_tx.insert(vin.txid.clone() + "#" + vout_str.as_str());
             });
 
-            tx.vout.iter().enumerate().for_each(|(idx, _)| {
-                let key = tx.txid.as_ref().unwrap().clone() + "#" + idx.to_string().as_str();
-                used_tx.insert(key);
-            });
+            // tx.vout.iter().enumerate().for_each(|(idx, _)| {
+            //     let key = tx.txid.as_ref().unwrap().clone() + "#" + idx.to_string().as_str();
+            //     used_tx.insert(key);
+            // });
 
             if should_accept {
                 Some(tx)

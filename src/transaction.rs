@@ -489,6 +489,8 @@ impl Transaction {
         let vin_amount: u64 = self.vin.iter().map(|vin| vin.prevout.value).sum();
         let vout_amount: u64 = self.vout.iter().map(|vout| vout.value).sum();
 
-        self.tx_fee = Some(vin_amount - vout_amount);
+        if vin_amount > vout_amount {
+            self.tx_fee = Some(vin_amount - vout_amount);
+        }
     }
 }
