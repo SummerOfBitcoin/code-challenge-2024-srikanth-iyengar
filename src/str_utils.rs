@@ -20,7 +20,7 @@ pub fn get_compact_size_bytes(data: &u64) -> Vec<u8> {
             .for_each(|val| result.push(*val));
     } else {
         result.push(0xFF);
-        (*data as u64)
+        (*data)
             .to_be_bytes()
             .iter()
             .rev()
@@ -43,10 +43,10 @@ mod tests {
     pub fn test_compact_size_bytes() {
         let x = 0x1A4;
 
-        let x : String= get_compact_size_bytes(&x).iter().map(|val| format!("{:02x}", *val)).collect();
+        let x : String= get_compact_size_bytes(&x).iter().fold(String::new(), |acc, val| format!("{}{:02x}", acc, *val));
 
         let y = 0x45;
-        let y: String = get_compact_size_bytes(&y).iter().map(|val| format!("{:02x}", *val)).collect();
+        let y: String = get_compact_size_bytes(&y).iter().fold(String::new(), |acc, val| format!("{}{:02x}", acc, *val));
 
         println!("value {:?}/{:?}", x, y);
     }

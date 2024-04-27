@@ -1,8 +1,7 @@
 use std::{
     fs::File,
-    io::Write, sync::atomic::Ordering,
+    io::Write
 };
-use rand::thread_rng;
 use transaction::Transaction;
 
 use crate::{
@@ -34,13 +33,14 @@ fn main() {
         result.reverse();
 
         // after this step, result will have the actual txid
-        let txid: String = result.iter().map(|val| format!("{:02x}", val)).collect();
+        let txid: String = result.iter().fold(String::new(), |acc, val| format!("{}{:02x}", acc, val));
+
         tx.txid = Some(txid.clone());
 
         // this is just a sanity check whether, the serialzed data is correct or not
         let result = hash256(&result);
 
-        let hash_txid: String = result.iter().map(|val| format!("{:02x}", val)).collect();
+        let hash_txid: String = result.iter().fold(String::new(), |acc, val| format!("{}{:02x}", acc, val));
         assert_eq!(hash_txid, *tx.sanity_hash.as_ref().unwrap());
 
         if tx.is_segwit.unwrap() {
@@ -48,8 +48,7 @@ fn main() {
             let wtxid: String = double_hash256(&raw_tx_witness)
                 .iter()
                 .rev()
-                .map(|val| format!("{:02x}", *val))
-                .collect();
+                .fold(String::new(), |acc, val| format!("{}{:02x}", acc, *val));
             tx.wtxid = Some(wtxid);
         } else {
             tx.wtxid = Some(txid.clone());
@@ -65,7 +64,7 @@ fn main() {
     // verify each trannscations vin
     for tx in txs.iter() {
         if tx.validate_transacation() {
-            verified_txs.push(&tx);
+            verified_txs.push(tx);
         }
     }
     println!("Verified {}", verified_txs.len());
@@ -131,7 +130,7 @@ fn main() {
 
     let _ = out_file.write("\n".as_bytes());
 
-    let _ = ordered_txs.iter().for_each(|tx| {
+    ordered_txs.iter().for_each(|tx| {
         let _ = out_file.write(tx.txid.as_ref().unwrap().as_bytes());
         let _ = out_file.write("\n".as_bytes());
     });

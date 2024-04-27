@@ -1,8 +1,5 @@
 use std::str::FromStr;
-
 use serde::Deserialize;
-use serde_json;
-
 use crate::{
     hash_utils::double_hash256,
     interpreter::Interpreter,
@@ -21,7 +18,6 @@ pub enum PubkeyType {
     P2WSH,    // SegWit transaction unlock script type, witness field is present
     P2TR,     // Pay to taproot locks bitcoin
     P2SH,     // Pay to hash
-    OPRETURN, // This is itself a opcode as well as a script itself, used to prevent burn money ?
 }
 
 impl FromStr for PubkeyType {
@@ -397,7 +393,7 @@ impl Transaction {
             .parse::<PubkeyType>();
         match parsed_type.unwrap() {
             PubkeyType::P2WSH | PubkeyType::P2WPKH => {
-                return self.serialize_witness_transaction(idx);
+                self.serialize_witness_transaction(idx)
             }
             _ => self.get_raw_tx_for_legacy_tx(idx),
         }

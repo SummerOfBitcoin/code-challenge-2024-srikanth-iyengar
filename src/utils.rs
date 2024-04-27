@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, time::{SystemTime, UNIX_EPOCH}};
 use hex_literal::hex;
 use num_bigint::BigUint;
 
-use crate::{debug, debug_hex, hash_utils::double_hash256, merkle::{merkleroot, prepare_merkle_root}, opcodes::all_opcodes::{OP_PUSHBYTES, OP_RETURN}, str_utils::get_hex_bytes, transaction::{Pubkey, Transaction, Vin}};
+use crate::{debug, debug_hex, hash_utils::double_hash256, merkle::{merkleroot, prepare_merkle_root}, opcodes::all_opcodes::{OP_PUSHBYTES, OP_RETURN}, str_utils::get_hex_bytes, transaction::{Pubkey, Transaction, Vin}, hex_str};
 
 
 pub fn get_txs() -> Vec<Transaction> {
@@ -48,7 +48,7 @@ pub fn get_txs() -> Vec<Transaction> {
 }
 
 
-pub fn remove_double_spending_tx<'a>(txs: &'a mut Vec<Transaction>) -> Vec<&'a Transaction> {
+pub fn remove_double_spending_tx(txs: &mut [Transaction]) -> Vec<&Transaction> {
     let mut used_tx: HashSet<String> = HashSet::new();
     let filtered_txs: Vec<&Transaction> = txs
         .iter()
@@ -62,7 +62,7 @@ pub fn remove_double_spending_tx<'a>(txs: &'a mut Vec<Transaction>) -> Vec<&'a T
                 // transaction
                 let key = vin.txid.clone() + "#" + vout_str.as_str();
 
-                should_accept &= used_tx.get(&key) == None;
+                should_accept &= used_tx.get(&key).is_none();
 
                 // push the txid#vout in the map
                 used_tx.insert(vin.txid.clone() + "#" + vout_str.as_str());
@@ -79,16 +79,12 @@ pub fn remove_double_spending_tx<'a>(txs: &'a mut Vec<Transaction>) -> Vec<&'a T
                 None
             }
         })
-        .filter(|tx| match tx {
-            Some(_) => true,
-            None => false,
-        })
-        .map(|tx| tx.unwrap())
+        .flatten()
         .collect();
     filtered_txs
 }
 
-pub fn prepare_coinbase_tx(txs: &Vec<&Transaction>) -> Transaction {
+pub fn prepare_coinbase_tx(txs: &[&Transaction]) -> Transaction {
     let mut fees: u64 = 0;
     for tx in txs.iter() {
         let vin_amount: u64 = tx.vin.iter().map(|vin| vin.prevout.value).sum();
@@ -110,7 +106,7 @@ pub fn prepare_coinbase_tx(txs: &Vec<&Transaction>) -> Transaction {
         }
     });
 
-    let wtxid_merkle_root = merkleroot(wtxids).get(0).unwrap().clone();
+    let wtxid_merkle_root = merkleroot(wtxids).first().unwrap().clone();
 
     let coinbase_vin = Vin {
         vout: 4294967295,
@@ -151,12 +147,7 @@ pub fn prepare_coinbase_tx(txs: &Vec<&Transaction>) -> Transaction {
 
     scriptpub_key_lock.extend(witness_lock_hash.iter());
 
-    let scriptpubkey_lock_str: String = scriptpub_key_lock
-        .iter()
-        .map(|val| format!("{:02x}", val))
-        .collect();
-
-    debug!(scriptpubkey_lock_str);
+    let scriptpubkey_lock_str: String = hex_str!(scriptpub_key_lock);
 
     let vout: Vec<Pubkey> = vec![
         Pubkey {
@@ -164,7 +155,7 @@ pub fn prepare_coinbase_tx(txs: &Vec<&Transaction>) -> Transaction {
             scriptpubkey_type: String::from("p2pkh"),
             scriptpubkey: String::from("76a914edf10a7fac6b32e24daa5305c723f3de58db1bc888ac"),
             scriptpubkey_asm: String::from(""),
-            value: fees + 1250000000 as u64,
+            value: fees + 1250000000,
         },
         Pubkey {
             scriptpubkey_address: Some(String::from("")),
@@ -197,19 +188,18 @@ pub fn prepare_coinbase_tx(txs: &Vec<&Transaction>) -> Transaction {
     let txid_str: String = txid
         .iter()
         .rev()
-        .map(|val| format!("{:02x}", *val))
-        .collect();
+        .fold(String::new(), |acc, val| format!("{}{:02x}", acc, *val));
     coinbase_tx.txid = Some(txid_str);
 
     coinbase_tx
 }
 
 
-pub fn prepare_blockheader(txs: &Vec<&Transaction>) -> Vec<u8> {
+pub fn prepare_blockheader(txs: &[&Transaction]) -> Vec<u8> {
     let version_bytes: Vec<u8> = vec![0x00, 0x00, 0x00, 0x04];
     let prev_block_hash: Vec<u8> =
         hex!["0000000000000000000000000000000000000000000000000000000000000000"].to_vec();
-    let merkle_root: Vec<u8> = prepare_merkle_root(&txs, false);
+    let merkle_root: Vec<u8> = prepare_merkle_root(txs, false);
     let ts_bytes: Vec<u8> =
     (SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -235,7 +225,7 @@ pub fn prepare_blockheader(txs: &Vec<&Transaction>) -> Vec<u8> {
 
         block_hash.reverse();
 
-        let block_hash_str: String = block_hash.iter().map(|x| format!("{:02x}", *x)).collect();
+        let block_hash_str: String = hex_str!(block_hash);
 
         let block_hash = BigUint::from_bytes_be(block_hash.as_slice());
         let target = BigUint::from_bytes_be(bits.as_slice());

@@ -3,7 +3,7 @@ use std::{usize, vec};
 use crate::{
     opcodes::{
         all_opcodes::{
-            OP_CHECKMULTISIG, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_HASH160, OP_PUSHBYTES,
+            OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_HASH160, OP_PUSHBYTES,
             OP_PUSHDATA1, OP_PUSHDATA2, OP_PUSHDATA4, OP_RETURN,
         },
         Opcode,
@@ -80,7 +80,7 @@ impl<'a> Interpreter<'a> {
             // Take the top two element from the stack and compare if they are equal
             let arg1 = self.stack.pop();
             let arg2 = self.stack.pop();
-            if arg1.is_some() && arg2.is_some() {
+            if let (arg1, arg2) = (Some(arg1), Some(arg2)) {
                 match arg1
                     .unwrap()
                     .iter()
@@ -192,8 +192,7 @@ impl<'a> Interpreter<'a> {
                 self.is_halted = true;
                 self.stack.push(vec![0]);
             }
-        } else if OP_CHECKMULTISIG == opcode {
-        } else {
+        }  else {
             // should we crash :) ?
         }
     }

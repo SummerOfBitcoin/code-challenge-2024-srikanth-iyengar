@@ -20,10 +20,7 @@ impl<T> Stack<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        match self.top {
-            Some(_) => false,
-            None => true,
-        }
+        self.top.is_none()
     }
 
     pub fn push(&mut self, data: T) {

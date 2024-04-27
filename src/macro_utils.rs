@@ -20,7 +20,7 @@ macro_rules! debug_hex {
 #[macro_export]
 macro_rules! hex_str {
     ($vec: expr) => {{
-        let hex_str: String = $vec.iter().map(|val| format!("{:02x}", *val)).collect();
+        let hex_str: String = $vec.iter().fold(String::new(), |acc, val| format!("{}{:02x}", acc, *val));
         { hex_str }
     }};
 }

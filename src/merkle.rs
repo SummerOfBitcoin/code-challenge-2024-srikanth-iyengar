@@ -33,7 +33,7 @@ pub fn merkleroot(txs: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     merkleroot(result)
 }
 
-pub fn prepare_merkle_root(txs: &Vec<&Transaction>, is_wtxid: bool) -> Vec<u8> {
+pub fn prepare_merkle_root(txs: &[&Transaction], is_wtxid: bool) -> Vec<u8> {
     let txids: Vec<Vec<u8>> = txs
         .iter()
         .map(|tx| {
@@ -48,11 +48,11 @@ pub fn prepare_merkle_root(txs: &Vec<&Transaction>, is_wtxid: bool) -> Vec<u8> {
         })
         .collect();
 
-    merkleroot(txids).get(0).unwrap().clone()
+    merkleroot(txids).first().unwrap().clone()
 }
 
 // this function will reorder the tx, such that parent tx appears first before the child txs appear
-pub fn reorder_txs<'a>(txs: &'a Vec<&'a Transaction>) -> Vec<&'a Transaction> {
+pub fn reorder_txs<'a>(txs: &'a [&'a Transaction]) -> Vec<&'a Transaction> {
     // adjacency list in the form of txid(parent) -> txid(child1), txid(child2).. and so on
     let mut adj_list: HashMap<String, Vec<String>> = HashMap::new();
     let mut incoming_edges: HashMap<String, u32> = HashMap::new();
@@ -69,7 +69,7 @@ pub fn reorder_txs<'a>(txs: &'a Vec<&'a Transaction>) -> Vec<&'a Transaction> {
         tx.vin.iter().for_each(|child_tx| {
             neighbours.push(child_tx.txid.clone());
             if let Some(val) = incoming_edges.get_mut(&child_tx.txid.clone()) {
-                *val = *val + 1;
+                *val += 1;
             } else {
                 incoming_edges.insert(child_tx.txid.clone(), 1);
             }
