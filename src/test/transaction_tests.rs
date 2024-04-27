@@ -42,6 +42,9 @@ pub fn segwit_serialize_test() {
         version: 0x02,
         locktime: 0x00,
         is_segwit: Some(true),
+        wtxid: None,
+        weight: None,
+        tx_fee: None,
     };
 
     let actual_preimage = String::from("02000000cbfaca386d65ea7043aaac40302325d0dc7391a73b585571e28d3287d6b162033bb13029ce7b1f559ef5e747fcac439f1455a2ec7c5f09b72290795e70665044ac4994014aa36b7f53375658ef595b3cb2891e1735fe5b441686f5e53338e76a010000001976a914aa966f56de599b4094b61aa68a2b3df9e97e9c4888ac3075000000000000ffffffff900a6c6ff6cd938bf863e50613a4ed5fb1661b78649fe354116edaf5d4abb95200000000");

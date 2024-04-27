@@ -464,6 +464,8 @@ impl Transaction {
                         if let Some(result) = interpreter.exec_all() {
                             success &= result.len() == 1 && result[0] == 0x01;
                         }
+                    },
+                    PubkeyType::P2TR => {
                     }
                     _ => {
                         success = false;
