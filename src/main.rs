@@ -69,15 +69,7 @@ fn main() {
     }
     println!("Verified {}", verified_txs.len());
 
-    // verified_txs.sort_by(|a, b| {
-    //     // compare a.fee / a.weight with b.fee / b.weight
-    //     let ratio_a = (a.weight.unwrap() as u64) / a.tx_fee.unwrap() * 2;
-    //     let ratio_b = (b.weight.unwrap() as u64) / b.tx_fee.unwrap() / 2;
-
-    //     ratio_a.cmp(&ratio_b)
-    // });
-
-    let transactions_to_consider: Vec<&Transaction> = pick_best_transactions(verified_txs.as_slice(), 1000000);
+    let transactions_to_consider: Vec<&Transaction> = pick_best_transactions(verified_txs.as_slice(), 8000_000);
 
     // order the transactions topologically
     let mut ordered_txs: Vec<&Transaction> = reorder_txs(&transactions_to_consider);
