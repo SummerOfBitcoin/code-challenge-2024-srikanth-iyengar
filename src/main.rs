@@ -7,7 +7,7 @@ use transaction::Transaction;
 use crate::{
     hash_utils::{double_hash256, hash256},
     merkle::reorder_txs,
-    utils::{get_txs, prepare_blockheader, prepare_coinbase_tx, remove_double_spending_tx},
+    utils::{get_txs, prepare_blockheader, prepare_coinbase_tx, remove_double_spending_tx, pick_best_transactions},
 };
 
 mod hash_utils;
@@ -77,30 +77,7 @@ fn main() {
     //     ratio_a.cmp(&ratio_b)
     // });
 
-    let mut transactions_to_consider: Vec<&Transaction> = Vec::new();
-
-    let mut weights_filled : u32 = 0;
-
-    let mut idx = 0;
-
-    while weights_filled + 1000 <= MAX_WEIGHT_ALLOWED {
-        if idx >= verified_txs.len() {
-            break;
-        }
-
-        if weights_filled + verified_txs[idx].weight.unwrap() as u32 + 1000 <= MAX_WEIGHT_ALLOWED {
-            transactions_to_consider.push(verified_txs[idx]);
-            weights_filled += verified_txs[idx].weight.unwrap() as u32;
-        } else {
-            // do nothing consider the next tx
-        }
-
-        idx += 1;
-    }
-
-    debug!(weights_filled);
-
-    // now we have the verified transactions
+    let transactions_to_consider: Vec<&Transaction> = pick_best_transactions(verified_txs.as_slice(), 1000000);
 
     // order the transactions topologically
     let mut ordered_txs: Vec<&Transaction> = reorder_txs(&transactions_to_consider);

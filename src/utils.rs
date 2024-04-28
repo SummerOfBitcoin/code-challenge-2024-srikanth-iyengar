@@ -2,9 +2,13 @@ use std::{collections::HashSet, fs, time::{SystemTime, UNIX_EPOCH}};
 
 use hex_literal::hex;
 use num_bigint::BigUint;
+extern crate rand;
 
-use crate::{debug, debug_hex, hash_utils::double_hash256, merkle::{merkleroot, prepare_merkle_root}, opcodes::all_opcodes::{OP_PUSHBYTES, OP_RETURN}, str_utils::get_hex_bytes, transaction::{Pubkey, Transaction, Vin}, hex_str};
+use rand::{thread_rng, Rng, seq::SliceRandom};
 
+
+
+use crate::{debug, debug_hex, hash_utils::double_hash256, merkle::{merkleroot, prepare_merkle_root}, opcodes::all_opcodes::{OP_PUSHBYTES, OP_RETURN}, str_utils::get_hex_bytes, transaction::{Pubkey, Transaction, Vin}, hex_str, MAX_WEIGHT_ALLOWED};
 
 pub fn get_txs() -> Vec<Transaction> {
     let directory = "mempool/";
@@ -242,4 +246,55 @@ pub fn prepare_blockheader(txs: &[&Transaction]) -> Vec<u8> {
         }
     }
     vec![]
+}
+
+pub fn pick_best_transactions<'a> (txs: &'a [&Transaction], rounds: u32) -> Vec<&'a Transaction>  {
+    let mut current_weight = 0;
+    let mut current_fee = 0;
+    let mut result: Vec<&Transaction> = Vec::new();
+
+    let mut shuffled_txs: Vec<&Transaction> = Vec::new();
+    shuffled_txs.extend_from_slice(txs);
+
+    for _ in 0..rounds {
+        let mut rng = rand::thread_rng();
+        shuffled_txs.shuffle(&mut rng);
+
+        let mut transactions_to_consider: Vec<&Transaction> = Vec::new();
+
+        let mut weights_filled : u32 = 0;
+
+        let mut idx = 0;
+
+        while weights_filled + 1000 <= MAX_WEIGHT_ALLOWED {
+            if idx >= shuffled_txs.len() {
+                break;
+            }
+
+            if weights_filled + shuffled_txs[idx].weight.unwrap() as u32 + 1000 <= MAX_WEIGHT_ALLOWED {
+                transactions_to_consider.push(shuffled_txs[idx]);
+                weights_filled += shuffled_txs[idx].weight.unwrap() as u32;
+            } else { 
+               // do nothing consider the next tx
+            }
+
+            idx += 1;
+        }
+
+        let miner_fee: u64 = transactions_to_consider.iter().map(|tx| tx.tx_fee.unwrap()).sum();
+
+        let score : f64 = weights_filled as f64 / MAX_WEIGHT_ALLOWED as f64  + miner_fee as f64 / 3000000 as f64;
+
+        let prev_score : f64 = current_weight as f64 / MAX_WEIGHT_ALLOWED as f64 + current_fee  as f64 / 3000000 as f64;
+
+        if score >= prev_score {
+            // debug!(score, prev_score);
+            // debug!("found a better transaction set");
+            result = transactions_to_consider;
+            current_fee = miner_fee;
+            current_weight = weights_filled;
+        }
+    }
+
+    result
 }
