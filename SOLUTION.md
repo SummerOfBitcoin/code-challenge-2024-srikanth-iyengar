@@ -2,45 +2,45 @@
 
 ## Design Approach
 
-The first step I took approaching this assignment is to identify steps a miner would take to mine a block. The key concepts of creating a valid block are as follows:
+The first step I took approaching this assignment was to identify steps a miner would take to mine a block. The key concepts of creating a valid block are as follows:
 
 - Fetch the transactions from mempool -> Read the mempool directory and store it somewhere in the memory.
-- Remove transaction with double spending
+- Remove transactions with double spending
 - Validate the unlocking script of all the inputs of a transaction
 - Since we cannot mine all the verified transactions, I need to pick transactions in such a way that weight and transaction fee both are maximized.
 - Once I have decided on some transaction to mine, I have to order them in topological order
-- After topological ordering I have to prepare the coinbase transaction
-- At last create the blockheader
+- After topological ordering, I have to prepare the coinbase transaction
+- At last create the block header
 
-I choose rust as the programming language for this assignment as the organiation I am targeting also using rust. It was a fun experience to write the mining logic in rust.
+I chose Rust as the programming language for this assignment as the organization I am targeting also using Rust. It was a fun experience to write the mining logic in Rust.
 
-So now lets deep dive all the steps in more detail
+So now let's deep dive into all the steps in more detail
 ### Fetch the transactions from mempool
-- To complete this I had to create types in rust which resembble the schema in the json files. Once that was doneI had to derive the Deserialize trait for each of the struct/types. I used serde\_json to read the json files and store them in a vector of transactions.
+- To complete this I had to create types in Rust that resembles the schema in the JSON files. Once that was done I had to derive the `Deserialize` trait for each of the struct/types. I used serde\_json to read the JSON files and store them in a vector of transactions.
 - So once I had the transaction in memory I serialized the transaction in the standard format and calculated txid using Double SHA256.
 
 ### Remove transaction with double spending
-- To remove the transaction with double spending I had to create a hashset to check whether element with `txid#vout` is already present in the set or not. If it is present then I had ignore the transaction completely and mark as invalid.
+- To remove the transaction with double spending I had to create a hashset to check whether an element with `txid#vout` is already present in the set or not. If it is present then I had ignore the transaction completely and mark as invalid.
 
 ### Validate the unlocking script of all the inputs of a transaction
-- To validate a unlocking script I basically required a intepreter which can run on its one and will just return the last result once the script is executed.
-- To reduce the scope of the assignment I built a interpreter which hahd a very smaller of instructions avaialbe which are only present in the transactions of the mempool.
-- Then I built a interpreter with those constrained instruction set and ran the script to validate the unlocking script.
+- To validate an unlocking script I basically required an interpreter that can run on its one and will just return the last result once the script is executed.
+- To reduce the scope of the assignment I built an interpreter which had a very small of instructions available which are only present in the transactions of the mempool.
+- Then I built an interpreter with those constrained instruction sets and ran the script to validate the unlocking script.
 - Depending on the stack top result and went on marking the transaction as valid or invalid.
 
 ### Pick transactions in such a way that weight and transaction fee both are maximized
-- So my first approach was to sort the transactions in descending order of the fee and then pick the transactions with highest fee and then check if the weight is not exceeding the limit.
-- I though this greedy solution would work and will give me good enough score. But on analyzing the problem this problem seemed pretty similar to the knapsack problem. So I gave it thought on can I solve this using the knapsack standard problem. But since standard problem will be inefficient in this case because constraints are too high.
-- So I planned on switching to randomizes algorithm where I considered the trnasaction in the sorted order first because why not. Then I randomly shuffled the transactions for a couple of rounds and picked the optimal solution from the random shuffle.
+- So my first approach was to sort the transactions in descending order of the fee and then pick the transactions with the highest fee and then check if the weight is not exceeding the limit.
+- I thought this greedy solution would work and will give me a good enough score. But on analyzing the problem this problem seemed pretty similar to the knapsack problem. So I gave it thought on can I solve this using the knapsack standard problem. However since standard problem will be inefficient in this case because constraints are too high.
+- So I planned on switching to a randomized algorithm where I considered the transaction in the sorted order first because why not? Then I randomly shuffled the transactions for a couple of rounds and picked the optimal solution from the random shuffle.
 
 ### Topological ordering
 - Once I had the transactions to mine I had to order them in topological order. I used the standard topological ordering algorithm to order the transactions.
 - A basic DFS algorithm was used to order the transactions.
-- After the DFS I had stack with the transactions in the topological order. So I popped one by one and prepared the final tranactions to be mined.
+- After the DFS I had stack with the transactions in the topological order. So I popped one by one and prepared the final transactions to be mined.
 
 ### Prepare the coinbase transaction
 - The coinbase transaction is the first transaction in the block. It is the transaction that rewards the miner with the block reward.
-- So the coinbase transaction contains a input and I constrained the coinbase output to have only 2 outputs once of which is the block reward + transaction fee and the other is a op\_return output containing the witness commitment.
+- So the coinbase transaction contains input and I constrained the coinbase output to have only 2 outputs one of which is the block reward + transaction fee and the other is a op\_return output containing the witness commitment.
 - Once I had the coinbase transaction I modified the vector in such a way that the coinbase transaction is the first transaction in the vector.
 
 ### Merkle root calculation
@@ -55,17 +55,17 @@ So now lets deep dive all the steps in more detail
     - time
     - bits
     - nonce
-- To calculate the merkle root I copied the transaction Ids in a seperate list and then calculated the merkle root using the standard merkle root calculation algorithm.
+- To calculate the Merkle root I copied the transaction Ids in a separate list and then calculated the Merkle root using the standard Merkle root calculation algorithm.
 - I considered prev\_block hash to be `0000000000000000000000000000000000000000000000000000000000000000` which means this is the genesis block.
 - I considered the time to be the current time in seconds.
 - I considered the bits to be `0x1d00ffff` which was the given difficulty.
-- I considered the nonce to be 0 initially and then started incrementing the nonce until the hash of the blockheader is less than the target.
+- I considered the nonce to be 0 initially and then started incrementing the nonce until the hash of the block header was less than the target.
 - For comparing the very big 256 bit number I used the num-bigint crate in rust.
-- There could be a optimal way to compare the compressed target with the hash of the blockheader but I was not able to find it.
+- There could be an optimal way to compare the compressed target with the hash of the block header but I was not able to find it.
 
 ## Implementation Details
 I followed the following steps for the implementation:
-1. Create the structs in rust for the transaction to be parsed in.
+1. Create the structs in Rust for the transaction to be parsed in.
 ```rust
 #[derive(Deserialize)]
 pub struct Pubkey {
@@ -122,7 +122,7 @@ impl Transaction {
     }
 }
 ```
-4. To verify that the serialization of transaction is correct I hashed the txid and matched it with the filename.
+4. To verify that the serialization of the transaction is correct I hashed the txid and matched it with the filename.
 ```rust
 let mut txs: Vec<Transaction> = get_txs();
 txs.iter_mut().for_each(|tx| {
@@ -143,7 +143,7 @@ txs.iter_mut().for_each(|tx| {
     assert_eq!(hash_txid, *tx.sanity_hash.as_ref().unwrap());
 });
 ```
-5. Remove the transaction with double spending.
+5. Remove the transaction with double-spending.
 ```rust
 pub fn remove_double_spending_tx(txs: &mut [Transaction]) -> Vec<&Transaction> {
     let mut used_tx: HashSet<String> = HashSet::new();
@@ -176,7 +176,7 @@ pub fn remove_double_spending_tx(txs: &mut [Transaction]) -> Vec<&Transaction> {
     filtered_txs
 }
 ```
-6. Developing the actual interpreter with the minimal instrction set.
+6. Developing the actual interpreter with the minimal instruction set.
 ```rust
 pub struct Interpreter<'a> {
     pub instructions: &'a [u8],
@@ -205,7 +205,7 @@ fn get_ctx_val(&mut self) -> u8 {
     val
 }
 ```
-7. Randomly shuffle the transactions and pick the optimal solution using `psuedo random generator rand`.
+7. Randomly shuffle the transactions and pick the optimal solution using `pseudo random generator rand`.
 ```rust
 pub fn pick_best_transactions<'a> (txs: &'a [&Transaction], rounds: u32) -> Vec<&'a Transaction>  {
     let mut best_fee_till_now = 0;
@@ -319,7 +319,7 @@ pub fn merkleroot(txs: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     merkleroot(result)
 }
 ```
-11. Creating the blockheader and mining the block.
+11. Creating the block header and mining the block.
 ```rust
 let version_bytes: Vec<u8> = vec![0x00, 0x00, 0x00, 0x04];
 let prev_block_hash: Vec<u8> =
@@ -337,8 +337,8 @@ let bits: Vec<u8> =
 
 ## Results and Performance
 After getting the first CI run to pass I kept optimizing the program to maximize the score
-- Sorting based on the `weights / fee` this approach yeilded a score of 91 and was executed under 3-4 seconds and 30-40 seconds for compilation time.
-- After when I switched over to randomized approach I experimeneted with variation in the number of rounds I performed following is the result for it
+- Sorting based on the `weights / fee` this approach yielded a score of 91 and was executed in under 3-4 seconds and 30-40 seconds for compilation time.
+- After when I switched over to the randomized approach I experimented with variations in the number of rounds I performed following is the result of it
 
 | Rounds  | Score | Time in secs |
 |---------|-------|--------------|
@@ -353,7 +353,7 @@ After getting the first CI run to pass I kept optimizing the program to maximize
 
 ## Conclusion
 It was fun completing this assignment. Since I was new to rust I learned a lot of things about rust which helped in learning the basics of rust.
-It was the first time I ever wrote a program which is this close to systems programming. Working with bytes, VarInt, Little Endian, Big Endian was a fun experience.
-Due to lack of time I couldn't contribute my 100% to this assignment and had to cut corners in some places. But I am happy with the result I got.
+It was the first time I ever wrote a program which is this close to systems programming. Working with bytes, VarInt, Little Endian, and Big Endian was a fun experience.
+Due to lack of time, I couldn't contribute my 100% to this assignment and had to cut corners in some places. But I am happy with the result I got.
 Overall it was a great learning experience and I am looking forward to more fun in the future.
 Happy Coding!
